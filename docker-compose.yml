@@ -1,0 +1,93 @@
+version: "3"
+services:
+  mysql:
+    image: elestio/mysql:8.0
+    volumes:
+      - ./storage/mysql:/var/lib/mysql
+    restart: always
+    ports:
+      - 172.17.0.1:60276:3306
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=lake
+      - MYSQL_USER=lake
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+
+  grafana:
+    image: apache/devlake-dashboard:${SOFTWARE_VERSION_TAG}
+    ports:
+      - 172.17.0.1:62493:3000
+    volumes:
+      - grafana:/var/lib/grafana
+    environment:
+      GF_SERVER_ROOT_URL: "https://${DOMAIN}/grafana"
+      GF_USERS_DEFAULT_THEME: "light"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: 172.17.0.1:25
+      GF_SMTP_FROM_ADDRESS: ${SMTP_FROM_EMAIL}
+      MYSQL_URL: mysql:3306
+      MYSQL_DATABASE: lake
+      MYSQL_USER: lake
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: UTC
+    restart: always
+    depends_on:
+      - mysql
+
+  devlake:
+    image: apache/devlake:${SOFTWARE_VERSION_TAG}
+    ports:
+      - 172.17.0.1:51569:8080
+    restart: always
+    volumes:
+      - ./storage/devlake-log:/app/logs
+    env_file:
+      - ./.env
+    environment:
+      LOGGING_DIR: /app/logs
+      TZ: UTC
+    depends_on:
+      - mysql
+
+  config-ui:
+    image: apache/devlake-config-ui:${SOFTWARE_VERSION_TAG}
+    ports:
+      - 172.17.0.1:41164:4000
+    env_file:
+      - ./.env
+    environment:
+      DEVLAKE_ENDPOINT: devlake:8080
+      GRAFANA_ENDPOINT: grafana:3000
+      TZ: UTC
+      ADMIN_USER: admin
+      ADMIN_PASS: ${ADMIN_PASSWORD}
+    depends_on:
+      - devlake
+
+  pma:
+    image: elestio/phpmyadmin
+    restart: always
+    links:
+      - mysql:mysql
+    ports:
+      - "172.17.0.1:3971:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: lake
+      PMA_PASSWORD: ${MYSQL_PASSWORD}
+      UPLOAD_LIMIT: 500M
+      MYSQL_USERNAME: root
+      MYSQL_ROOT_PASSWORD: ${ADMIN_PASSWORD}
+    depends_on:
+      - mysql
+
+volumes:
+  grafana:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PWD}/storage/grafana-storage
+      o: bind
